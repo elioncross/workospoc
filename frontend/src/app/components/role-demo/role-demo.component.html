@@ -1,0 +1,111 @@
+<div class="card">
+  <h2>Role-Based Access Demo</h2>
+  <p>This component demonstrates role-based access control. Try accessing different endpoints based on your role.</p>
+  
+  <div *ngIf="currentUser" class="alert alert-info mb-4">
+    <h4>Your Role: 
+      <span class="role-badge" [ngClass]="'role-' + currentUser.role.toLowerCase()">
+        {{ currentUser.role }}
+      </span>
+    </h4>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6 mb-3">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Admin Endpoint</h5>
+          <p class="card-text">Only accessible to SMA (Super Admin) role</p>
+          <button 
+            class="btn btn-primary" 
+            (click)="testEndpoint('admin')"
+            [disabled]="!canAccess('admin') || isLoading"
+          >
+            Test Admin Endpoint
+          </button>
+          <div *ngIf="!canAccess('admin')" class="text-muted mt-2">
+            <small>❌ Access denied - SMA role required</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Manager Endpoint</h5>
+          <p class="card-text">Accessible to SMA and MA roles</p>
+          <button 
+            class="btn btn-primary" 
+            (click)="testEndpoint('manager')"
+            [disabled]="!canAccess('manager') || isLoading"
+          >
+            Test Manager Endpoint
+          </button>
+          <div *ngIf="!canAccess('manager')" class="text-muted mt-2">
+            <small>❌ Access denied - MA or SMA role required</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">User Endpoint</h5>
+          <p class="card-text">Accessible to SMA, MA, and MC roles</p>
+          <button 
+            class="btn btn-primary" 
+            (click)="testEndpoint('user')"
+            [disabled]="!canAccess('user') || isLoading"
+          >
+            Test User Endpoint
+          </button>
+          <div *ngIf="!canAccess('user')" class="text-muted mt-2">
+            <small>❌ Access denied - MC, MA, or SMA role required</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6 mb-3">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Support Endpoint</h5>
+          <p class="card-text">Accessible to all authenticated users</p>
+          <button 
+            class="btn btn-primary" 
+            (click)="testEndpoint('support')"
+            [disabled]="isLoading"
+          >
+            Test Support Endpoint
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Results -->
+  <div *ngIf="getObjectKeys(apiResults).length > 0" class="mt-4">
+    <h4>API Results:</h4>
+    <div *ngFor="let result of apiResults | keyvalue" class="mb-3">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="card-title">{{ result.key | titlecase }} Endpoint</h6>
+          <div *ngIf="result.value.success" class="alert alert-success">
+            <strong>Success:</strong>
+            <pre>{{ result.value.success | json }}</pre>
+          </div>
+          <div *ngIf="result.value.error" class="alert alert-danger">
+            <strong>Error:</strong>
+            <pre>{{ result.value.error | json }}</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <a routerLink="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
+  </div>
+</div>

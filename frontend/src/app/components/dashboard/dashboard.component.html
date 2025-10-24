@@ -1,0 +1,21 @@
+<div class="card">
+  <h2>Dashboard</h2>
+  <p>Welcome to the WorkOS POC Dashboard!</p>
+  
+  <div *ngIf="currentUser" class="alert alert-info">
+    <h4>Current User Information:</h4>
+    <ul>
+      <li><strong>Username:</strong> {{ currentUser.username }}</li>
+      <li><strong>Corp ID:</strong> {{ currentUser.corpId }}</li>
+      <li><strong>Role:</strong> 
+        <span class="role-badge" [ngClass]="'role-' + currentUser.role.toLowerCase()">
+          {{ currentUser.role }}
+        </span>
+      </li>
+    </ul>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mt-4">
+    <a routerLink="/demo" class="btn btn-primary">View Role Demo</a>
+  </div>
+</div>
