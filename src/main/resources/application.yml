@@ -8,8 +8,8 @@ spring:
 # WorkOS AuthKit Configuration
 workos:
   environment: staging  # Options: staging, production
-  api-key: YOUR_WORKOS_API_KEY_HERE  # Replace with your actual WorkOS API key
-  client-id: YOUR_WORKOS_CLIENT_ID_HERE  # Replace with your actual WorkOS Client ID
+  api-key: ${WORKOS_API_KEY:YOUR_WORKOS_API_KEY_HERE}  # Set via environment variable
+  client-id: ${WORKOS_CLIENT_ID:YOUR_WORKOS_CLIENT_ID_HERE}  # Set via environment variable
   connection-id: conn_01K11PQBX0WQMHM1CNTQ758VSF
   redirect-uri: http://localhost:8081/auth/workos/callback
   

@@ -1,14 +1,21 @@
 #!/bin/bash
 
 echo "Starting WorkOS POC Backend..."
-echo "Setting WorkOS environment variables for staging..."
+echo "Loading environment variables from .env file..."
 
-# WorkOS Environment Variables for Staging
-export WORKOS_API_KEY='YOUR_WORKOS_API_KEY_HERE'
-export WORKOS_CLIENT_ID='YOUR_WORKOS_CLIENT_ID_HERE'
-export WORKOS_BASE_URL='https://api.workos.dev'
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    echo "📄 Loading .env file..."
+    export $(cat .env | grep -v '^#' | xargs)
+    echo "✅ Environment variables loaded from .env"
+else
+    echo "⚠️  No .env file found. Please create one from .env.example"
+    echo "   cp .env.example .env"
+    echo "   Then edit .env with your actual WorkOS credentials"
+    exit 1
+fi
 
-echo "✅ WorkOS environment variables set:"
+echo "✅ WorkOS environment variables:"
 echo "   WORKOS_API_KEY: ${WORKOS_API_KEY:0:10}..."
 echo "   WORKOS_CLIENT_ID: $WORKOS_CLIENT_ID"
 echo "   WORKOS_BASE_URL: $WORKOS_BASE_URL"
