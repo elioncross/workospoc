@@ -45,6 +45,51 @@ public class JwtUtil {
                 .compact();
     }
 
+    public String generateTokenForWorkOSUser(String email, String role, String corpId, Profile profile) {
+        Claims claims = Jwts.claims()
+                .setSubject(email)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs));
+        
+        claims.put("role", role);
+        claims.put("corpId", corpId);
+        claims.put("source", "workos");
+        
+        // Add profile information if available
+        if (profile != null) {
+            claims.put("profileId", profile.id);
+            claims.put("connectionId", profile.connectionId);
+            claims.put("connectionType", profile.connectionType);
+            
+            if (profile.firstName != null && !profile.firstName.trim().isEmpty()) {
+                claims.put("firstName", profile.firstName);
+            }
+            if (profile.lastName != null && !profile.lastName.trim().isEmpty()) {
+                claims.put("lastName", profile.lastName);
+            }
+            
+            // Add raw attributes if available - this contains SAML attributes
+            if (profile.rawAttributes != null && !profile.rawAttributes.isEmpty()) {
+                claims.put("rawAttributes", profile.rawAttributes);
+                
+                // Log the raw attributes for debugging
+                logger.info("WorkOS Profile raw attributes: {}", profile.rawAttributes);
+            }
+            
+            // Add organization ID if available
+            if (profile.organizationId != null && !profile.organizationId.trim().isEmpty()) {
+                claims.put("organizationId", profile.organizationId);
+            }
+        }
+        
+        logger.info("Generated JWT token for WorkOS user: {} with corpId: {} and role: {}", email, corpId, role);
+        
+        return Jwts.builder()
+                .setClaims(claims)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
     public String generateTokenForWorkOSUser(String email, String role) {
         return generateTokenForWorkOSUser(email, role, null);
     }
@@ -131,7 +176,7 @@ public class JwtUtil {
                 .compact();
     }
     
-    public String generateTokenForWorkOSUserStaging(String email, String role, 
+    public String generateTokenForWorkOSUserStaging(String email, String role, String corpId,
                                                    String firstName, String lastName,
                                                    String organizationName, String organizationId,
                                                    String connectionId) {
@@ -141,6 +186,7 @@ public class JwtUtil {
                 .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs));
         
         claims.put("role", role);
+        claims.put("corpId", corpId);
         claims.put("source", "workos");
         
         // Add provided user attributes
@@ -154,13 +200,21 @@ public class JwtUtil {
         claims.put("organizationId", organizationId);
         claims.put("organizationName", organizationName);
         
-        logger.info("Generated dynamic staging JWT token for WorkOS user: {} ({} {}) from org: {}", 
-                   email, firstName, lastName, organizationName);
+        logger.info("Generated dynamic staging JWT token for WorkOS user: {} ({} {}) from org: {} with corpId: {}", 
+                   email, firstName, lastName, organizationName, corpId);
         
         return Jwts.builder()
                 .setClaims(claims)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
+    }
+    
+    public String generateTokenForWorkOSUserStaging(String email, String role, 
+                                                   String firstName, String lastName,
+                                                   String organizationName, String organizationId,
+                                                   String connectionId) {
+        // Call the new method with default corpId
+        return generateTokenForWorkOSUserStaging(email, role, "staging_corp", firstName, lastName, organizationName, organizationId, connectionId);
     }
     
     private String capitalizeFirst(String str) {

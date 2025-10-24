@@ -61,6 +61,7 @@ public class WorkOSCallbackController {
             // Initialize variables for user data
             String userEmail;
             String userRole;
+            String corpId;
             Profile profile = null;
 
             // Check if this is Test IdP callback (staging environment using Test Identity Provider)
@@ -83,7 +84,13 @@ public class WorkOSCallbackController {
                 
                 profile = profileAndToken.profile;
                 userEmail = profile.email;
-                userRole = determineUserRole(profile.email);
+                
+                // Extract custom attributes from SAML
+                corpId = extractCorpId(profile);
+                userRole = extractUserRole(profile);
+                
+                // Log extraction results
+                logger.info("Extracted custom attributes - corpId: {}, role: {}", corpId, userRole);
                 
                 logger.info("✅ Successfully retrieved WorkOS profile using SDK: {}", userEmail);
                 logger.info("Profile details - ID: {}, Email: {}, First Name: {}, Last Name: {}, Connection ID: {}, Connection Type: {}", 
@@ -95,8 +102,9 @@ public class WorkOSCallbackController {
                 session.setAttribute("user_authenticated", true);
                 session.setAttribute("user_email", userEmail);
                 session.setAttribute("user_role", userRole);
+                session.setAttribute("user_corp_id", corpId);
                 
-                logger.info("💾 Stored profile in session for user: {}", userEmail);
+                logger.info("💾 Stored profile in session for user: {} (corpId: {}, role: {})", userEmail, corpId, userRole);
                 
                 // Log raw attributes to see what SAML attributes are available
                 if (profile.rawAttributes != null && !profile.rawAttributes.isEmpty()) {
@@ -120,6 +128,7 @@ public class WorkOSCallbackController {
                     
                     userEmail = workOSConfig.getStagingFallbackEmail();
                     userRole = workOSConfig.getStagingFallbackRole();
+                    corpId = "staging_corp"; // Default corpId for staging
                     profile = null; // No real profile in staging fallback
                     
                     // Store fallback data in session too
@@ -128,6 +137,7 @@ public class WorkOSCallbackController {
                     session.setAttribute("user_authenticated", true);
                     session.setAttribute("user_email", userEmail);
                     session.setAttribute("user_role", userRole);
+                    session.setAttribute("user_corp_id", corpId);
                     session.setAttribute("is_fallback_user", true);
                     
                     logger.info("Using static fallback user:");
@@ -159,20 +169,21 @@ public class WorkOSCallbackController {
             String token;
             if (profile != null) {
                 // Real profile from WorkOS API
-                token = jwtUtil.generateTokenForWorkOSUser(userEmail, userRole, profile);
-                logger.info("Generated JWT token from real WorkOS profile for user: {}", userEmail);
+                token = jwtUtil.generateTokenForWorkOSUser(userEmail, userRole, corpId, profile);
+                logger.info("Generated JWT token from real WorkOS profile for user: {} (corpId: {}, role: {})", userEmail, corpId, userRole);
             } else {
                 // Staging fallback - create token with static fallback attributes
                 token = jwtUtil.generateTokenForWorkOSUserStaging(
                     workOSConfig.getStagingFallbackEmail(),
                     workOSConfig.getStagingFallbackRole(),
+                    corpId, // Use the corpId variable we set in staging fallback
                     workOSConfig.getStagingFallbackFirstName(),
                     workOSConfig.getStagingFallbackLastName(),
                     workOSConfig.getStagingFallbackOrgName(),
                     workOSConfig.getStagingFallbackOrgId(),
                     workOSConfig.getStagingFallbackConnectionId()
                 );
-                logger.info("Generated JWT token from staging fallback data for user: {}", userEmail);
+                logger.info("Generated JWT token from staging fallback data for user: {} (corpId: {}, role: {})", userEmail, corpId, userRole);
             }
 
             // Redirect to frontend with token
@@ -219,17 +230,51 @@ public class WorkOSCallbackController {
     }
 
     /**
-     * Map user email to internal role
+     * Extract custom SAML attribute from WorkOS profile raw attributes
      */
-    private String determineUserRole(String email) {
-        // Simple role mapping based on email
-        if (email.contains("admin")) {
-            return "SMA"; // Super Admin
-        } else if (email.contains("manager")) {
-            return "MA"; // Manager
-        } else if (email.contains("support")) {
-            return "SU"; // Support
+    private String extractCustomAttribute(Profile profile, String attributeName, String defaultValue) {
+        if (profile == null || profile.rawAttributes == null || profile.rawAttributes.isEmpty()) {
+            logger.debug("No raw attributes available for extraction of {}, using default: {}", attributeName, defaultValue);
+            return defaultValue;
         }
-        return "MC"; // Member (default)
+        
+        Object attributeValue = profile.rawAttributes.get(attributeName);
+        if (attributeValue != null) {
+            String value = attributeValue.toString().trim();
+            if (!value.isEmpty()) {
+                logger.info("Extracted {} = {} from WorkOS SAML attributes", attributeName, value);
+                return value;
+            }
+        }
+        
+        logger.debug("Attribute {} not found or empty in raw attributes, using default: {}", attributeName, defaultValue);
+        return defaultValue;
     }
+    
+    /**
+     * Extract corpId from customer_corpid SAML attribute
+     */
+    private String extractCorpId(Profile profile) {
+        return extractCustomAttribute(profile, "customer_corpid", "default_corp");
+    }
+    
+    /**
+     * Extract role from custom_role SAML attribute with validation
+     */
+    private String extractUserRole(Profile profile) {
+        String role = extractCustomAttribute(profile, "custom_role", "MC");
+        
+        // Validate that the role is one of our supported values
+        switch (role.toUpperCase()) {
+            case "SMA": // Super Manager Admin
+            case "MA":  // Manager
+            case "MC":  // Member/Customer
+            case "SU":  // Support
+                return role.toUpperCase();
+            default:
+                logger.warn("Invalid role '{}' extracted from custom_role, defaulting to MC", role);
+                return "MC";
+        }
+    }
+
 }
