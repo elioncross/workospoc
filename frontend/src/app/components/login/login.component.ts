@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
@@ -16,7 +16,8 @@ export class LoginComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private route: ActivatedRoute
   ) {
     this.loginForm = this.fb.group({
       username: ['', Validators.required],
@@ -25,6 +26,23 @@ export class LoginComponent implements OnInit {
   }
 
   ngOnInit() {
+    // Check for token in URL (in case user is redirected here with token)
+    this.route.queryParams.subscribe(params => {
+      const token = params['token'];
+      if (token) {
+        console.log('Token found in login URL, storing and redirecting to dashboard');
+        this.authService.setToken(token);
+        this.router.navigate(['/dashboard']);
+        return;
+      }
+      
+      // Check for error messages
+      if (params['error']) {
+        this.errorMessage = params['message'] || 'An error occurred during authentication';
+        console.error('Login error:', params['error'], this.errorMessage);
+      }
+    });
+
     // Check if already authenticated
     if (this.authService.isAuthenticated()) {
       this.router.navigate(['/dashboard']);

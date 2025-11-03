@@ -15,7 +15,7 @@
       <div class="card">
         <div class="card-body">
           <h5 class="card-title">Admin Endpoint</h5>
-          <p class="card-text">Only accessible to SMA (Super Admin) role</p>
+          <p class="card-text">Only accessible to org_super (Super Admin) role</p>
           <button 
             class="btn btn-primary" 
             (click)="testEndpoint('admin')"
@@ -24,7 +24,7 @@
             Test Admin Endpoint
           </button>
           <div *ngIf="!canAccess('admin')" class="text-muted mt-2">
-            <small>❌ Access denied - SMA role required</small>
+            <small>❌ Access denied - org_super role required</small>
           </div>
         </div>
       </div>
@@ -34,7 +34,7 @@
       <div class="card">
         <div class="card-body">
           <h5 class="card-title">Manager Endpoint</h5>
-          <p class="card-text">Accessible to SMA and MA roles</p>
+          <p class="card-text">Accessible to org_super and org_managerplus roles</p>
           <button 
             class="btn btn-primary" 
             (click)="testEndpoint('manager')"
@@ -43,7 +43,7 @@
             Test Manager Endpoint
           </button>
           <div *ngIf="!canAccess('manager')" class="text-muted mt-2">
-            <small>❌ Access denied - MA or SMA role required</small>
+            <small>❌ Access denied - org_managerplus or org_super role required</small>
           </div>
         </div>
       </div>
@@ -53,7 +53,7 @@
       <div class="card">
         <div class="card-body">
           <h5 class="card-title">User Endpoint</h5>
-          <p class="card-text">Accessible to SMA, MA, and MC roles</p>
+          <p class="card-text">Accessible to org_super, org_managerplus, and org_manager roles</p>
           <button 
             class="btn btn-primary" 
             (click)="testEndpoint('user')"
@@ -62,7 +62,7 @@
             Test User Endpoint
           </button>
           <div *ngIf="!canAccess('user')" class="text-muted mt-2">
-            <small>❌ Access denied - MC, MA, or SMA role required</small>
+            <small>❌ Access denied - org_manager, org_managerplus, or org_super role required</small>
           </div>
         </div>
       </div>

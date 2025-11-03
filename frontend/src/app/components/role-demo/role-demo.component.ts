@@ -55,11 +55,11 @@ export class RoleDemoComponent implements OnInit {
     
     switch (role) {
       case 'admin':
-        return this.currentUser.role === 'SMA';
+        return this.currentUser.role === 'org_super';
       case 'manager':
-        return ['SMA', 'MA'].includes(this.currentUser.role);
+        return ['org_super', 'org_managerplus'].includes(this.currentUser.role);
       case 'user':
-        return ['SMA', 'MA', 'MC'].includes(this.currentUser.role);
+        return ['org_super', 'org_managerplus', 'org_manager'].includes(this.currentUser.role);
       case 'support':
         return true; // All authenticated users can access support
       default:

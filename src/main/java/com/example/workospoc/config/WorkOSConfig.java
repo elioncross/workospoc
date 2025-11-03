@@ -62,7 +62,7 @@ public class WorkOSConfig {
     @Value("${workos.staging.fallback-user.last-name:FALLBACK}")
     private String stagingFallbackLastName;
 
-    @Value("${workos.staging.fallback-user.role:MC}")
+    @Value("${workos.staging.fallback-user.role:org_manager}")
     private String stagingFallbackRole;
 
     @Value("${workos.staging.fallback-user.organization-name:STAGING FALLBACK ORGANIZATION}")
@@ -83,25 +83,29 @@ public class WorkOSConfig {
 
     @Bean
     public WorkOS workOS() {
-        logger.info("Initializing WorkOS in {} environment", environment);
-        logger.debug("API key: {}", apiKey != null ? apiKey.substring(0, 10) + "..." : "null");
+        logger.info("=== WorkOS Configuration Debug ===");
+        logger.info("Environment value from @Value: '{}'", environment);
+        logger.info("isStagingEnvironment(): {}", isStagingEnvironment());
+        logger.info("stagingBaseUrl: {}", stagingBaseUrl);
+        logger.info("productionBaseUrl: {}", productionBaseUrl);
+        logger.info("getCurrentBaseUrl(): {}", getCurrentBaseUrl());
+        logger.info("API key: {}", apiKey != null ? apiKey.substring(0, 10) + "..." : "null");
+        logger.info("=================================");
         
+        // Force staging environment for testing
         if (isStagingEnvironment()) {
-            logger.info("Configuring WorkOS for STAGING environment");
-            logger.info("  API Base URL: {}", stagingBaseUrl);
-            logger.info("  API Key format: {}", apiKey.startsWith(STAGING_API_KEY_PREFIX) ? "✅ Staging (" + STAGING_API_KEY_PREFIX + ")" : "❌ Wrong format");
+            logger.info("✅ STAGING environment detected - using staging base URL");
+            System.setProperty("workos.base.url", stagingBaseUrl);
         } else {
-            logger.info("Configuring WorkOS for PRODUCTION environment");
-            logger.info("  API Base URL: {}", productionBaseUrl);
-            logger.info("  API Key format: {}", apiKey.startsWith("sk_live_") ? "✅ Production (sk_live_)" : "❌ Wrong format");
+            logger.warn("❌ PRODUCTION environment detected - this should not happen with staging config");
+            logger.warn("   Environment value: '{}'", environment);
+            logger.warn("   Forcing staging base URL for testing");
+            System.setProperty("workos.base.url", stagingBaseUrl);
         }
         
-        // Simple WorkOS instance creation - original working approach
+        // Create WorkOS instance
         WorkOS workOS = new WorkOS(apiKey);
-        logger.info("WorkOS instance created successfully");
-        
-        // Validate environment and API key
-        validateConfiguration();
+        logger.info("WorkOS instance created with base URL: {}", System.getProperty("workos.base.url"));
         
         return workOS;
     }
@@ -176,7 +180,9 @@ public class WorkOSConfig {
 
     // Environment detection methods
     public boolean isStagingEnvironment() {
-        return "staging".equalsIgnoreCase(environment);
+        boolean isStaging = "staging".equalsIgnoreCase(environment);
+        logger.info("isStagingEnvironment() - environment: '{}', isStaging: {}", environment, isStaging);
+        return isStaging;
     }
 
     public boolean isProductionEnvironment() {
@@ -233,7 +239,10 @@ public class WorkOSConfig {
     public String getStagingBaseUrl() { return stagingBaseUrl; }
     public String getProductionBaseUrl() { return productionBaseUrl; }
     public String getCurrentBaseUrl() {
-        return isStagingEnvironment() ? stagingBaseUrl : productionBaseUrl;
+        String baseUrl = isStagingEnvironment() ? stagingBaseUrl : productionBaseUrl;
+        logger.info("getCurrentBaseUrl() - Environment: {}, isStaging: {}, baseUrl: {}", 
+                   environment, isStagingEnvironment(), baseUrl);
+        return baseUrl;
     }
 
     // Frontend configuration getters
@@ -260,54 +269,30 @@ public class WorkOSConfig {
     }
 
     /**
-     * Generate the authorization URL using WorkOS SDK - Updated to match example pattern
-     * Handles both real organizations (like WorkOS example) and Test IdP fallback
+     * Generate the authorization URL - Complete manual approach
+     * This completely bypasses the WorkOS SDK to ensure we use the correct staging URL
      */
     public String getAuthorizationUrl() {
-        try {
-            // Check if we have a real organization ID configured (like WorkOS example)
-            String organizationId = System.getenv("WORKOS_ORGANIZATION_ID");
-            
-            if (organizationId != null && !organizationId.isEmpty()) {
-                // Use real organization (exactly like the WorkOS example)
-                String authUrl = workOS().sso
-                    .getAuthorizationUrl(clientId, REDIRECT_URI)
-                    .organization(organizationId)
-                    .build();
-                
-                logger.info("🏢 Using Real Organization (WorkOS Example Pattern): {}", organizationId);
-                logger.info(AUTH_URL_LOG_MESSAGE, authUrl);
-                return authUrl;
-                
-            } else if (!isStagingEnvironment()) {
-                // Production but no org ID - this shouldn't happen
-                logger.error("❌ Production environment but no WORKOS_ORGANIZATION_ID set");
-                logger.error("   Please set WORKOS_ORGANIZATION_ID environment variable");
-                logger.error("   Create organization in WorkOS Dashboard and copy the Organization ID");
-                throw new IllegalStateException("WORKOS_ORGANIZATION_ID required for production environment");
-                
-            } else {
-                // Staging fallback - try Test Identity Provider with known limitations
-                logger.warn("⚠️  No real organization configured, using Test Identity Provider");
-                logger.warn("   Note: This may cause deserialization issues with 'TestIdp' connection type");
-                logger.warn("   This limitation will be resolved when using real organization with production account");
-                
-                String authUrl = workOS().sso
-                    .getAuthorizationUrl(clientId, REDIRECT_URI)
-                    .organization("org_test_idp")
-                    .build();
-                
-                logger.info("🧪 Staging: Using Test Identity Provider (temporary until production)");
-                logger.info(AUTH_URL_LOG_MESSAGE, authUrl);
-                return authUrl;
-            }
-            
-        } catch (Exception e) {
-            logger.error("❌ Error generating authorization URL with SDK: {}", e.getMessage());
-            logger.info("🔄 Falling back to manual URL building");
-            // Fallback to manual URL building if SDK fails
-            return getFallbackAuthorizationUrl();
-        }
+        logger.info("=== Generating WorkOS Authorization URL ===");
+        
+        // Force staging base URL regardless of environment detection
+        String baseUrl = "https://api.workos.dev";
+        // Use connection ID for direct SAML SSO (bypasses AuthKit)
+        String connectionIdValue = this.connectionId; // Use connection ID from config
+        
+        // Use 'connection' parameter for direct SAML SSO (bypasses AuthKit)
+        String authUrl = String.format(
+            "%s/sso/authorize?response_type=code&client_id=%s&redirect_uri=%s&connection=%s",
+            baseUrl, clientId, REDIRECT_URI, connectionIdValue
+        );
+        
+        logger.info("✅ Generated Authorization URL with connection parameter (direct SAML): {}", authUrl);
+        logger.info("   Base URL: {}", baseUrl);
+        logger.info("   Connection ID: {}", connectionIdValue);
+        logger.info("   Client ID: {}", clientId);
+        logger.info("   Redirect URI: {}", REDIRECT_URI);
+        
+        return authUrl;
     }
 
     /**

@@ -151,22 +151,27 @@ body {
   text-transform: uppercase;
 }
 
-.role-sma {
+.role-org_super {
   background-color: #dc3545;
   color: white;
 }
 
-.role-ma {
+.role-org_managerplus {
   background-color: #fd7e14;
   color: white;
 }
 
-.role-mc {
+.role-org_manager {
   background-color: #28a745;
   color: white;
 }
 
-.role-su {
+.role-org_support {
   background-color: #6c757d;
+  color: white;
+}
+
+.role-org_user {
+  background-color: #17a2b8;
   color: white;
 }

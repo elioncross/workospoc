@@ -23,14 +23,26 @@ public class UserPrincipal implements UserDetails {
     }
     
     private Collection<? extends GrantedAuthority> mapRoleToAuthorities(String role) {
+        // Map new system roles to Spring Security authorities
         switch (role) {
-            case "SMA": // Super Manager Admin
+            case "org_super": // Super Manager Admin
                 return Collections.singletonList(new SimpleGrantedAuthority("ROLE_ADMIN"));
-            case "MA": // Manager
+            case "org_managerplus": // Manager Plus
                 return Collections.singletonList(new SimpleGrantedAuthority("ROLE_MANAGER"));
-            case "MC": // Member/Customer
+            case "org_manager": // Manager
+                return Collections.singletonList(new SimpleGrantedAuthority("ROLE_MANAGER"));
+            case "org_support": // Support
+                return Collections.singletonList(new SimpleGrantedAuthority("ROLE_SUPPORT"));
+            case "org_user": // Regular User
                 return Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"));
-            case "SU": // Support
+            // Legacy role support (for backward compatibility)
+            case "SMA": // Super Manager Admin (legacy)
+                return Collections.singletonList(new SimpleGrantedAuthority("ROLE_ADMIN"));
+            case "MA": // Manager (legacy)
+                return Collections.singletonList(new SimpleGrantedAuthority("ROLE_MANAGER"));
+            case "MC": // Member/Customer (legacy)
+                return Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"));
+            case "SU": // Support (legacy)
                 return Collections.singletonList(new SimpleGrantedAuthority("ROLE_SUPPORT"));
             default:
                 return Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"));

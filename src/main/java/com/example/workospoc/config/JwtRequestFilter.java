@@ -70,7 +70,7 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                     logger.info("Creating WorkOS user session for: " + displayName + " (" + username + 
                         "), Organization: " + corpId + ", Connection: " + connectionId);
                     
-                    userDetails = new UserPrincipal(username, "", corpId, role != null ? role : "MC");
+                    userDetails = new UserPrincipal(username, "", corpId, role != null ? role : "org_user");
                 } else {
                     // For regular users, load from user store
                     userDetails = this.userDetailsService.loadUserByUsername(username);

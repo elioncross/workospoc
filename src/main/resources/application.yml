@@ -8,13 +8,21 @@ spring:
 # WorkOS AuthKit Configuration
 workos:
   environment: staging  # Options: staging, production
-  api-key: ${WORKOS_API_KEY:YOUR_WORKOS_API_KEY_HERE}  # Set via environment variable
-  client-id: ${WORKOS_CLIENT_ID:YOUR_WORKOS_CLIENT_ID_HERE}  # Set via environment variable
-  connection-id: conn_01K11PQBX0WQMHM1CNTQ758VSF
+  # Use environment variables for sensitive values
+  # Set these in your environment or .env file:
+  # export WORKOS_API_KEY="sk_test_..."
+  # export WORKOS_CLIENT_ID="client_..."
+  # export WORKOS_CONNECTION_ID="conn_..."
+  # export WORKOS_ORGANIZATION_ID="org_..."
+  # export WORKOS_SESSION_PASSWORD="..."
+  api-key: ${WORKOS_API_KEY:your-api-key-here}
+  client-id: ${WORKOS_CLIENT_ID:your-client-id-here}
+  connection-id: ${WORKOS_CONNECTION_ID:your-connection-id-here}
+  organization-id: ${WORKOS_ORGANIZATION_ID:your-organization-id-here}
   redirect-uri: http://localhost:8081/auth/workos/callback
   
   # Cookie encryption password for WorkOS AuthKit
-  session-password: GvrsiNX8sb81sUmHVXSdlWXoH+9qIPRv
+  session-password: ${WORKOS_SESSION_PASSWORD:your-session-password-here}
   
   # PRODUCTION ORGANIZATION ID (Environment Variable)
   # When ready for production, set the environment variable:
@@ -48,7 +56,7 @@ workos:
       email: "staging-fallback@example.com"
       first-name: "STAGING"
       last-name: "FALLBACK" 
-      role: "MC"
+      role: "org_manager"
       organization-name: "STAGING FALLBACK ORGANIZATION"
       organization-id: "staging-fallback-org-001"
       connection-id: "staging-fallback-conn-001"

@@ -39,22 +39,38 @@ public class WorkOSCallbackController {
             HttpServletRequest request,
             HttpServletResponse response) throws IOException {
 
+        // ADD COMPREHENSIVE ENTRY-POINT LOGGING
+        logger.info("🔔🔔🔔 CALLBACK ENDPOINT HIT 🔔🔔🔔");
+        logger.info("Request URI: {}", request.getRequestURI());
+        logger.info("Query String: {}", request.getQueryString());
+        logger.info("Request Method: {}", request.getMethod());
+        logger.info("Remote Address: {}", request.getRemoteAddr());
+        logger.info("Request URL: {}", request.getRequestURL());
+        logger.info("Code parameter: {}", code != null ? "PRESENT (length: " + code.length() + ")" : "NULL");
+        logger.info("Error parameter: {}", error);
+        logger.info("Error Description: {}", errorDescription);
+        logger.info("All Request Parameters:");
+        request.getParameterMap().forEach((key, values) -> {
+            logger.info("  {} = {}", key, java.util.Arrays.toString(values));
+        });
+
         try {
             // Check for OAuth errors first
             if (error != null) {
-                logger.error("OAuth error: {} - {}", error, errorDescription);
+                logger.error("OAuth error detected: {} - {}", error, errorDescription);
                 handleOAuthError(error, errorDescription, response);
                 return;
             }
             
             if (code == null) {
-                logger.error("No authorization code received from WorkOS");
+                logger.error("❌ No authorization code received from WorkOS");
+                logger.error("   This might indicate a redirect URI mismatch or missing code parameter");
                 String errorUrl = workOSConfig.getFrontendLoginUrl() + "?error=no_code";
                 response.sendRedirect(errorUrl);
                 return;
             }
 
-            logger.info("Received WorkOS callback with code: {}", code);
+            logger.info("✅ Received WorkOS callback with code: {} (length: {})", code, code.length());
             logger.debug("WorkOS instance: {}", workOS);
             logger.debug("Client ID: {}", workOSConfig.getClientId());
 
@@ -93,8 +109,18 @@ public class WorkOSCallbackController {
                 logger.info("Extracted custom attributes - corpId: {}, role: {}", corpId, userRole);
                 
                 logger.info("✅ Successfully retrieved WorkOS profile using SDK: {}", userEmail);
-                logger.info("Profile details - ID: {}, Email: {}, First Name: {}, Last Name: {}, Connection ID: {}, Connection Type: {}", 
-                    profile.id, profile.email, profile.firstName, profile.lastName, profile.connectionId, profile.connectionType);
+                // Try to get role for logging (may not be directly accessible)
+                String roleForLog = "N/A";
+                try {
+                    if (profile.rawAttributes != null && profile.rawAttributes.containsKey("role")) {
+                        Object roleObj = profile.rawAttributes.get("role");
+                        roleForLog = roleObj != null ? roleObj.toString() : "N/A";
+                    }
+                } catch (Exception e) {
+                    // Ignore - role might not be accessible this way
+                }
+                logger.info("Profile details - ID: {}, Email: {}, First Name: {}, Last Name: {}, Connection ID: {}, Connection Type: {}, System Role: {}", 
+                    profile.id, profile.email, profile.firstName, profile.lastName, profile.connectionId, profile.connectionType, roleForLog);
                 
                 // Store profile in session (following WorkOS example pattern)
                 HttpSession session = request.getSession();
@@ -186,9 +212,11 @@ public class WorkOSCallbackController {
                 logger.info("Generated JWT token from staging fallback data for user: {} (corpId: {}, role: {})", userEmail, corpId, userRole);
             }
 
-            // Redirect to frontend with token
-            String redirectUrl = workOSConfig.getFrontendDashboardUrl() + "?token=" + token;
-            logger.info("Redirecting to frontend: {}", redirectUrl);
+            // Redirect to frontend with token (URL-encoded to handle special characters)
+            String encodedToken = URLEncoder.encode(token, "UTF-8");
+            String redirectUrl = workOSConfig.getFrontendDashboardUrl() + "?token=" + encodedToken;
+            logger.info("Redirecting to frontend with URL-encoded token");
+            logger.debug("Token length: {}, Encoded token length: {}", token.length(), encodedToken.length());
             response.sendRedirect(redirectUrl);
             logger.info("Redirect response sent successfully");
 
@@ -210,6 +238,8 @@ public class WorkOSCallbackController {
     }
 
     private void handleOAuthError(String error, String errorDescription, HttpServletResponse response) throws IOException {
+        logger.error("❌ OAuth Error: {} - {}", error, errorDescription);
+        
         if ("access_denied".equals(error)) {
             String errorUrl = workOSConfig.getFrontendLoginUrl() + "?error=access_denied&message=" + 
                 URLEncoder.encode("Access denied by user", "UTF-8");
@@ -221,6 +251,25 @@ public class WorkOSCallbackController {
         } else if ("domain_not_allowed".equals(error)) {
             String errorUrl = workOSConfig.getFrontendLoginUrl() + "?error=domain_not_allowed&message=" + 
                 URLEncoder.encode("Please use an email from an allowed domain (e.g., @example.com)", "UTF-8");
+            response.sendRedirect(errorUrl);
+        } else if ("server_error".equals(error) && errorDescription != null && errorDescription.contains("SAML")) {
+            // SAML configuration error - provide specific guidance
+            logger.error("❌ SAML Configuration Error: {}", errorDescription);
+            logger.error("   This usually means one of the following:");
+            logger.error("   1. ACS URL in Okta doesn't match WorkOS ACS URL exactly");
+            logger.error("   2. Entity ID (Audience URI) mismatch between Okta and WorkOS");
+            logger.error("   3. SAML signing certificate mismatch");
+            logger.error("   4. Name ID format mismatch");
+            logger.error("   5. Missing required SAML attributes");
+            logger.error("   6. SAML response signature validation failed");
+            logger.error("   Please verify all SAML settings in Okta match WorkOS configuration");
+            
+            String detailedMessage = String.format(
+                "SAML Configuration Error: %s. Please verify: ACS URL, Entity ID, Certificate, Name ID format, and SAML attributes match WorkOS settings.",
+                errorDescription
+            );
+            String errorUrl = workOSConfig.getFrontendLoginUrl() + "?error=saml_config_error&message=" + 
+                URLEncoder.encode(detailedMessage, "UTF-8");
             response.sendRedirect(errorUrl);
         } else {
             String errorUrl = workOSConfig.getFrontendLoginUrl() + "?error=sso_failed&message=" + 
@@ -259,21 +308,85 @@ public class WorkOSCallbackController {
     }
     
     /**
-     * Extract role from custom_role SAML attribute with validation
+     * Extract role from WorkOS profile role.slug (assigned in WorkOS)
+     * WorkOS returns system roles directly: org_super, org_managerplus, org_manager, org_support, org_user
+     * Falls back to customer_role SAML attribute if profile role is not available
      */
     private String extractUserRole(Profile profile) {
-        String role = extractCustomAttribute(profile, "custom_role", "MC");
+        String role = null;
+        String roleSource = null;
         
-        // Validate that the role is one of our supported values
-        switch (role.toUpperCase()) {
-            case "SMA": // Super Manager Admin
-            case "MA":  // Manager
-            case "MC":  // Member/Customer
-            case "SU":  // Support
-                return role.toUpperCase();
+        // First, try to get role from WorkOS profile using reflection (role.slug field)
+        try {
+            java.lang.reflect.Field roleField = profile.getClass().getDeclaredField("role");
+            roleField.setAccessible(true);
+            Object roleObj = roleField.get(profile);
+            if (roleObj != null) {
+                java.lang.reflect.Field slugField = roleObj.getClass().getDeclaredField("slug");
+                slugField.setAccessible(true);
+                Object slugObj = slugField.get(roleObj);
+                if (slugObj != null) {
+                    role = slugObj.toString();
+                    roleSource = "WorkOS profile role.slug";
+                    logger.info("✅ Using role from WorkOS profile: {} (source: {})", role, roleSource);
+                }
+            }
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            // Role field might not be accessible directly, try rawAttributes or SAML attribute
+            logger.debug("Could not access profile.role.slug directly: {}", e.getMessage());
+        } catch (Exception e) {
+            logger.debug("Unexpected error accessing profile.role.slug: {}", e.getMessage());
+        }
+        
+        // If role not found via reflection, check rawAttributes for role
+        if (role == null && profile.rawAttributes != null) {
+            Object roleObj = profile.rawAttributes.get("role");
+            if (roleObj != null) {
+                // Role might be a nested object, try to extract slug
+                if (roleObj instanceof java.util.Map) {
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> roleMap = (java.util.Map<String, Object>) roleObj;
+                    Object slugObj = roleMap.get("slug");
+                    if (slugObj != null) {
+                        role = slugObj.toString();
+                        roleSource = "WorkOS profile rawAttributes role.slug";
+                        logger.info("✅ Using role from WorkOS rawAttributes: {} (source: {})", role, roleSource);
+                    }
+                } else {
+                    role = roleObj.toString();
+                    roleSource = "WorkOS profile rawAttributes role";
+                    logger.info("✅ Using role from WorkOS rawAttributes: {} (source: {})", role, roleSource);
+                }
+            }
+        }
+        
+        // Fallback: Extract from customer_role SAML attribute
+        if (role == null || role.isEmpty()) {
+            role = extractCustomAttribute(profile, "customer_role", null);
+            if (role != null && !role.isEmpty()) {
+                roleSource = "SAML customer_role attribute";
+                logger.info("Using role from SAML attribute: {} (source: {})", role, roleSource);
+            }
+        }
+        
+        // If no role found, use default
+        if (role == null || role.isEmpty()) {
+            logger.warn("No role found in WorkOS profile or SAML attributes, using default: org_user");
+            return "org_user";
+        }
+        
+        // Validate that the role is one of the expected system roles
+        switch (role) {
+            case "org_super":
+            case "org_managerplus":
+            case "org_manager":
+            case "org_support":
+            case "org_user":
+                logger.info("✅ Validated system role: {} (source: {})", role, roleSource);
+                return role;
             default:
-                logger.warn("Invalid role '{}' extracted from custom_role, defaulting to MC", role);
-                return "MC";
+                logger.warn("Unknown system role '{}' (source: {}), assigning default: org_user", role, roleSource);
+                return "org_user";
         }
     }
 

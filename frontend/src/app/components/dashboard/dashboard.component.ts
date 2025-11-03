@@ -23,10 +23,23 @@ export class DashboardComponent implements OnInit {
       const token = params['token'];
       if (token) {
         console.log('SSO token received, authenticating user...');
-        // Store the token and authenticate
-        this.authService.setToken(token);
-        // Remove token from URL for security
-        this.router.navigate(['/dashboard'], { replaceUrl: true });
+        try {
+          // Store the token and authenticate (AuthGuard may have already done this, but ensure it's done)
+          this.authService.setToken(token);
+          // Wait a moment for token to be stored and user to be fetched, then navigate
+          setTimeout(() => {
+            this.router.navigate(['/dashboard'], { replaceUrl: true });
+          }, 100);
+        } catch (error) {
+          console.error('Error storing SSO token:', error);
+          this.router.navigate(['/login'], { queryParams: { error: 'token_storage_failed' } });
+        }
+      } else {
+        // No token in URL, check if already authenticated
+        if (!this.authService.isAuthenticated()) {
+          console.log('No token found and not authenticated, redirecting to login');
+          this.router.navigate(['/login']);
+        }
       }
     });
 

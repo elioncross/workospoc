@@ -16,7 +16,9 @@ export class AuthGuard implements CanActivate {
     const tokenFromUrl = route.queryParams['token'];
     
     if (tokenFromUrl) {
-      // Allow access if there's a token in URL - dashboard component will handle it
+      // Store the token immediately if it's in the URL
+      this.authService.setToken(tokenFromUrl);
+      // Allow access - dashboard component will handle cleanup
       return true;
     }
     
