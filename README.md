@@ -1,14 +1,15 @@
-# WorkOS AuthKit POC - Enterprise SSO Integration
+# WorkOS SSO Integration POC - Enterprise SSO Integration
 
-A proof-of-concept implementation demonstrating **dual authentication flows** using WorkOS AuthKit with Spring Boot backend and Angular frontend.
+A proof-of-concept implementation demonstrating **IdP-initiated SSO** using WorkOS as a SAML broker with Spring Boot backend and Angular frontend.
 
-## 🎯 **Status: FULLY FUNCTIONAL** ✅ **Option A Hybrid Implementation**
+## 🎯 **Status: FULLY FUNCTIONAL** ✅
 
-### 🆕 **Latest Updates**
-- ✅ **Updated WorkOS SDK** to v3.1.0 (latest)
-- ✅ **Implemented Option A Hybrid Authorization** 
-- ✅ **Resolved 403 Staging Errors** using official SDK patterns
-- ✅ **Production-Ready Transition** with environment variable support
+### 🆕 **Key Features**
+- ✅ **IdP-Initiated SSO Flow**: Users initiate SSO from their IdP dashboard (Okta, Azure Entra ID)
+- ✅ **Multi-IdP Support**: Okta and Azure Entra ID connections working
+- ✅ **Dynamic Customer Mapping**: Connection ID → Customer ID (corpId) automatically
+- ✅ **Role-Based Access Control**: WorkOS roles mapped to system permissions
+- ✅ **Production Ready**: Staging and production environments configured
 
 ## 🚀 **Quick Start**
 
@@ -18,96 +19,101 @@ A proof-of-concept implementation demonstrating **dual authentication flows** us
 ./start-frontend.sh   # → http://localhost:4200
 ```
 
-**Test SSO**: Click "Login with SSO" → Complete WorkOS form → Dashboard  
-**Test Internal**: Use `admin`/`password` (or `manager`, `user`, `support`)
+**Test SSO**: Initiate SSO from your IdP dashboard (Okta or Azure Entra ID)  
+**Test Internal**: Use `org_super`/`password` (or `org_managerplus`, `org_manager`, `org_support`, `org_user`)
 
 ## 🏗️ **Architecture Overview**
 
-This project showcases a **hybrid authentication system** that supports:
-- **Session-based SSO** via WorkOS AuthKit (following official patterns)
-- **JWT-based authentication** for API access  
-- **Seamless transition** from staging (Test Identity Provider) to production (real organizations)
-
-## 🎯 **Key Features - Option A Implementation**
-
-### ✅ **Smart Organization Detection**
-```java
-// Checks for WORKOS_ORGANIZATION_ID environment variable
-String organizationId = System.getenv("WORKOS_ORGANIZATION_ID");
-
-if (organizationId != null) {
-    // Use real organization (production pattern)
-    return workOS().sso.getAuthorizationUrl(clientId, redirectUri)
-        .organization(organizationId).build();
-} else {
-    // Fallback to Test Identity Provider (staging)
-    return workOS().sso.getAuthorizationUrl(clientId, redirectUri)
-        .organization("org_test_idp").build();
-}
+```
+Customer IdP (Okta/Azure) 
+    ↓ (User initiates SSO)
+WorkOS (SAML Broker)
+    ↓ (Profile + Connection ID)
+Our Application (Spring Boot + Angular)
+    ↓ (JWT with corpId)
+Customer Dashboard with Context
 ```
 
-### ✅ **Production Transition Guide**
-When ready for production:
-1. **Get WorkOS production account**
-2. **Create organization** in WorkOS Dashboard
-3. **Set environment variable**: `export WORKOS_ORGANIZATION_ID="org_01..."`
-4. **Restart application** → Automatically switches to production pattern
+**Key Components**
+- **WorkOS**: Handles all SAML complexity and IdP communication
+- **Connection Mapping**: Automatically maps IdP connection to customer account (corpId)
+- **JWT Tokens**: Secure authentication with customer context
+
+## 🎯 **How It Works**
+
+### IdP-Initiated SSO Flow
+
+1. User initiates SSO from their IdP dashboard (Okta/Azure)
+2. WorkOS processes SAML and identifies which customer's IdP (connection ID)
+3. Application receives profile with `connectionId` and maps to customer account (corpId)
+4. User lands on dashboard with correct customer context
+
+### Connection-Based Customer Mapping
+
+Each customer's IdP connection is mapped to their internal account ID:
+
+```yaml
+workos:
+  connection-mapping:
+    conn_01K8R9BKTPJWV123532JYJ5T6H: CORP_PROD_001  # Okta connection
+    conn_01K953TWV92J9M1F1J0CR85QB6: CORP_PROD_002  # Azure Entra ID connection
+```
+
+**Adding a New Customer:**
+1. Create WorkOS connection for customer's IdP
+2. Get connection ID from WorkOS
+3. Add one line to `application.yml`
+4. Restart application
+5. Done! ✅
 
 ## 🛠️ **Technology Stack**
+
 - **Backend**: Spring Boot 2.7.18, Spring Security
-- **Frontend**: Angular (latest)
-- **Authentication**: WorkOS AuthKit SDK v3.1.0 (updated)
+- **Frontend**: Angular 15
+- **SSO Provider**: WorkOS AuthKit (SAML2 broker)
+- **Authentication**: JWT tokens with custom claims
 - **Build Tool**: Maven
 - **Java Version**: 11
 
 ## 🔧 **Configuration**
 
-### Current Setup (Staging)
-```yaml
-# No environment variables needed
-# Uses Test Identity Provider (org_test_idp)
-```
+### Environment Variables
 
-### Production Setup
+Set these in your `.env` file or export before running:
+
 ```bash
-# Set your WorkOS organization ID
-export WORKOS_ORGANIZATION_ID="org_01..."
-# Application automatically detects and switches to production pattern
+export WORKOS_API_KEY="sk_test_..."
+export WORKOS_CLIENT_ID="client_..."
+export WORKOS_SESSION_PASSWORD="..."
 ```
 
-## 🏗 **What's Included**
+The `start-backend.sh` script will load these automatically.
 
-- **Option A Hybrid Authorization**: Smart environment detection
-- **Dual Authentication**: WorkOS SSO + Internal users  
-- **Test Environment**: WorkOS Test IdP for development
-- **JWT Tokens**: Rich user claims from both auth methods
-- **Role-based Access**: SMA, MA, MC, SU roles with protected endpoints
-- **Angular Frontend**: Complete auth flow with guards
-- **Production Ready**: Environment-specific configuration
+### Connection Mapping
 
-## 📖 **Documentation**
+Configure customer mappings in `application.yml`:
 
-| File | Purpose |
-|------|---------|
-| [SETUP.md](SETUP.md) | **Start here** - Essential setup & testing |
-| [DOCUMENTATION.md](DOCUMENTATION.md) | Complete technical reference |
+```yaml
+workos:
+  connection-mapping:
+    conn_01K8R9BKTPJWV123532JYJ5T6H: CORP_PROD_001  # Okta
+    conn_01K953TWV92J9M1F1J0CR85QB6: CORP_PROD_002  # Azure
+```
 
-## 🔧 **Key URLs**
-- **Frontend**: http://localhost:4200
-- **Backend API**: http://localhost:8081/api/me
-- **SSO Flow**: http://localhost:8081/api/auth/sso/workos
+## 📋 **Supported Roles**
 
----
-**Ready to test SSO? Start the apps and click "Login with SSO"!** 🎉
-
----
-**Ready to test SSO? Start the apps and click "Login with SSO"!** 🎉
+| Role Code | Display Name |
+|-----------|--------------|
+| `org_super` | Sentinel Master Administrator |
+| `org_managerplus` | Sentinel Senior Manager |
+| `org_manager` | Sentinel Manager |
+| `org_support` | Sentinel Support User |
+| `org_user` | Sentinel Standard User |
 
 ## 📋 **API Endpoints**
 
 ### Authentication
-- `GET /api/auth/sso/workos` - Initiate WorkOS SSO
-- `GET /auth/workos/callback` - WorkOS callback handler
+- `GET /auth/workos/callback` - WorkOS SSO callback handler (IdP-initiated only)
 - `POST /api/auth/login` - Internal user login
 - `GET /api/me` - Get current user details
 
@@ -118,23 +124,30 @@ export WORKOS_ORGANIZATION_ID="org_01..."
 
 ## 📖 **Documentation**
 
-📖 **Complete Setup Guide**: [DOCUMENTATION.md](DOCUMENTATION.md)  
-🔧 **Configuration Details**: [SETUP.md](SETUP.md)
+| File | Purpose |
+|------|---------|
+| [SETUP.md](SETUP.md) | **Start here** - Essential setup & testing |
+| [DOCUMENTATION.md](DOCUMENTATION.md) | Complete technical reference |
+| [DEMO_SLIDES.md](DEMO_SLIDES.md) | Demo presentation slides |
+
+## 🔧 **Key URLs**
+
+- **Frontend**: http://localhost:4200
+- **Backend API**: http://localhost:8081/api/me
+- **SSO Callback**: http://localhost:8081/auth/workos/callback
+
 ## 🏁 **Next Steps**
 
-### Current Environment: Staging with Test IdP ✅
-Your app is running with WorkOS Test Identity Provider - perfect for development and testing.
+### Current Status
+- ✅ IdP-initiated SSO working with Okta and Azure Entra ID
+- ✅ Connection-based customer mapping functional
+- ✅ Role-based access control operational
 
-### Moving to Production 🚀
-1. **Set up real SAML connection** in WorkOS dashboard (Okta, Azure AD, Google)
-2. **Update configuration**:
-   ```yaml
-   workos:
-     environment: production
-     api-key: sk_live_your_production_key
-     connection-id: your_real_connection_id
-   ```
-3. **Deploy with production URLs**
+### Production Deployment
+1. Set up WorkOS connections for each customer's IdP
+2. Configure connection mappings in `application.yml`
+3. Set production environment variables
+4. Deploy with production URLs
 
 ## 🔧 **Project Structure**
 
@@ -142,35 +155,32 @@ Your app is running with WorkOS Test Identity Provider - perfect for development
 workospoc/
 ├── src/main/java/com/example/workospoc/
 │   ├── config/
-│   │   ├── WorkOSConfig.java         # WorkOS configuration & environment detection
-│   │   ├── SecurityConfig.java       # Spring Security with dual auth flows
+│   │   ├── WorkOSConfig.java         # WorkOS configuration & connection mapping
+│   │   ├── SecurityConfig.java       # Spring Security configuration
 │   │   ├── JwtUtil.java             # JWT generation with WorkOS claims
 │   │   └── JwtRequestFilter.java     # JWT validation filter
 │   ├── controller/
-│   │   ├── WorkOSAuthController.java      # SSO initiation
 │   │   ├── WorkOSCallbackController.java  # SSO callback handler
 │   │   ├── AuthController.java            # Internal auth
 │   │   └── DemoController.java            # Role-based endpoints
 │   └── WorkosPocApplication.java
 ├── frontend/src/app/
-│   ├── services/auth.service.ts      # Auth service with SSO support
+│   ├── services/auth.service.ts      # Auth service
 │   ├── guards/auth.guard.ts          # Route protection
-│   └── components/                   # Login, Dashboard, Role Demo
+│   └── components/                   # Login, Dashboard
 ├── src/main/resources/
-│   └── application.yml               # Configuration with WorkOS credentials
-├── start-backend.sh                  # Backend startup with env vars
-├── start-frontend.sh                 # Frontend startup
-└── Documentation files
+│   └── application.yml               # Configuration with connection mappings
+├── start-backend.sh                  # Backend startup script
+└── start-frontend.sh                 # Frontend startup script
 ```
 
-## 🛡 **Security Features**
+## 🛡️ **Security Features**
 
-- **Hybrid Authentication**: Internal users + external SSO users
-- **JWT Claims**: Rich user context from WorkOS profiles
-- **Role Mapping**: Email-based role assignment
-- **Environment Isolation**: Staging fallback vs production validation
-- **CORS Configuration**: Secure cross-origin requests
-- **Auth Guards**: Frontend route protection
+- **IdP-Initiated SSO**: Users start from their IdP dashboard
+- **JWT Tokens**: Secure authentication with customer context (corpId, role)
+- **Role-Based Access**: WorkOS roles mapped to system permissions
+- **Connection Mapping**: Secure customer identification via WorkOS connection ID
+- **Environment Isolation**: Staging and production configurations
 
 ---
 
