@@ -5,6 +5,13 @@ import com.example.workospoc.config.WorkOSConfig;
 import com.workos.WorkOS;
 import com.workos.sso.models.Profile;
 import org.slf4j.Logger;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,11 +31,15 @@ public class WorkOSCallbackController {
     private final WorkOS workOS;
     private final JwtUtil jwtUtil;
     private final WorkOSConfig workOSConfig;
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
 
-    public WorkOSCallbackController(WorkOS workOS, JwtUtil jwtUtil, WorkOSConfig workOSConfig) {
+    public WorkOSCallbackController(WorkOS workOS, JwtUtil jwtUtil, WorkOSConfig workOSConfig, RestTemplate restTemplate) {
         this.workOS = workOS;
         this.jwtUtil = jwtUtil;
         this.workOSConfig = workOSConfig;
+        this.restTemplate = restTemplate;
+        this.objectMapper = new ObjectMapper();
     }
 
     @GetMapping("/auth/workos/callback")
@@ -103,7 +114,7 @@ public class WorkOSCallbackController {
                 
                 // Extract custom attributes from SAML
                 corpId = extractCorpId(profile);
-                userRole = extractUserRole(profile);
+                userRole = extractUserRole(profile, workOS);
                 
                 // Log extraction results
                 logger.info("Extracted custom attributes - corpId: {}, role: {}", corpId, userRole);
@@ -301,66 +312,186 @@ public class WorkOSCallbackController {
     }
     
     /**
-     * Extract corpId from customer_corpid SAML attribute
+     * Extract corpId using connectionId mapping (primary method)
+     * Falls back to system API if mapping not configured
      */
     private String extractCorpId(Profile profile) {
-        return extractCustomAttribute(profile, "customer_corpid", "default_corp");
+        String corpId = null;
+        
+        // FIRST: Try connectionId → corpId mapping (simplest, most reliable)
+        if (profile.connectionId != null) {
+            corpId = workOSConfig.getCorpIdByConnectionId(profile.connectionId);
+            if (corpId != null && !corpId.isEmpty()) {
+                logger.info("✅ Using corpId from connectionId mapping: {} -> {}", 
+                           profile.connectionId, corpId);
+                return corpId;
+            }
+            logger.warn("No corpId mapping found for connectionId: {}", profile.connectionId);
+        } else {
+            logger.warn("Profile connectionId is null - cannot lookup corpId mapping");
+        }
+        
+        // SECOND: Fallback to system API (if mapping not configured)
+        if (profile.organizationId != null && profile.email != null) {
+            try {
+                logger.info("Attempting to fetch corpId from system API for: {} in org: {}", 
+                           profile.email, profile.organizationId);
+                
+                // TODO: Replace with actual API endpoint URL from configuration
+                String apiBaseUrl = workOSConfig.getCorpMappingApiBaseUrl();
+                String apiKey = workOSConfig.getCorpMappingApiKey();
+                
+                // Build the API endpoint URL
+                // TODO: Update endpoint path to match your actual API
+                String url = String.format("%s/api/user/corpId?organizationId=%s&email=%s",
+                    apiBaseUrl,
+                    java.net.URLEncoder.encode(profile.organizationId, "UTF-8"),
+                    java.net.URLEncoder.encode(profile.email, "UTF-8"));
+                
+                // Set up HTTP headers with API key
+                HttpHeaders headers = new HttpHeaders();
+                if (apiKey != null && !apiKey.isEmpty()) {
+                    headers.set("Authorization", "Bearer " + apiKey);
+                }
+                headers.set("Content-Type", "application/json");
+                HttpEntity<String> entity = new HttpEntity<>(headers);
+                
+                // Make REST API call to your system
+                ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.GET, entity, String.class);
+                
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    // Parse JSON response
+                    // TODO: Update response structure to match your actual API response format
+                    JsonNode jsonNode = objectMapper.readTree(response.getBody());
+                    
+                    // Try different possible response structures
+                    JsonNode corpIdNode = jsonNode.get("corpId");
+                    if (corpIdNode == null) {
+                        corpIdNode = jsonNode.get("corp_id");
+                    }
+                    if (corpIdNode == null) {
+                        corpIdNode = jsonNode.get("accountId");
+                    }
+                    if (corpIdNode == null) {
+                        JsonNode dataNode = jsonNode.get("data");
+                        if (dataNode != null && dataNode.isObject()) {
+                            corpIdNode = dataNode.get("corpId");
+                        }
+                    }
+                    
+                    if (corpIdNode != null) {
+                        corpId = corpIdNode.asText();
+                        logger.info("✅ Using corpId from system API: {}", corpId);
+                        return corpId;
+                    } else {
+                        logger.warn("CorpId not found in API response for user: {} in org: {}", 
+                                   profile.email, profile.organizationId);
+                    }
+                } else {
+                    logger.warn("System API returned non-success status: {}", response.getStatusCode());
+                }
+            } catch (Exception e) {
+                logger.warn("Error fetching corpId from system API: {}", e.getMessage());
+                logger.debug("Error details: ", e);
+            }
+        }
+        
+        // THIRD: Default fallback (should not happen if mapping is configured)
+        logger.error("❌ No corpId found for connectionId: {} (org: {}, email: {})", 
+                    profile.connectionId, profile.organizationId, profile.email);
+        logger.error("   Please add connectionId mapping in application.yml or ensure system API is available");
+        return "default_corp"; // Or throw an exception if you want to fail fast
     }
     
     /**
-     * Extract role from WorkOS profile role.slug (assigned in WorkOS)
-     * WorkOS returns system roles directly: org_super, org_managerplus, org_manager, org_support, org_user
-     * Falls back to customer_role SAML attribute if profile role is not available
+     * Extract role from your system's API using WorkOS organization ID and email
+     * Falls back to customer_role SAML attribute if API call fails
      */
-    private String extractUserRole(Profile profile) {
+    private String extractUserRole(Profile profile, WorkOS workOS) {
         String role = null;
         String roleSource = null;
         
-        // First, try to get role from WorkOS profile using reflection (role.slug field)
-        try {
-            java.lang.reflect.Field roleField = profile.getClass().getDeclaredField("role");
-            roleField.setAccessible(true);
-            Object roleObj = roleField.get(profile);
-            if (roleObj != null) {
-                java.lang.reflect.Field slugField = roleObj.getClass().getDeclaredField("slug");
-                slugField.setAccessible(true);
-                Object slugObj = slugField.get(roleObj);
-                if (slugObj != null) {
-                    role = slugObj.toString();
-                    roleSource = "WorkOS profile role.slug";
-                    logger.info("✅ Using role from WorkOS profile: {} (source: {})", role, roleSource);
+        // FIRST: Try to fetch role from your system's API
+        if (profile.organizationId != null && profile.email != null) {
+            try {
+                logger.info("Attempting to fetch role from system API for: {} in org: {}", 
+                           profile.email, profile.organizationId);
+                
+                // TODO: Replace with actual API endpoint URL from configuration
+                String apiBaseUrl = workOSConfig.getCorpMappingApiBaseUrl();
+                String apiKey = workOSConfig.getCorpMappingApiKey();
+                
+                // Build the API endpoint URL
+                // TODO: Update endpoint path to match your actual API
+                String url = String.format("%s/api/user/role?organizationId=%s&email=%s",
+                    apiBaseUrl,
+                    java.net.URLEncoder.encode(profile.organizationId, "UTF-8"),
+                    java.net.URLEncoder.encode(profile.email, "UTF-8"));
+                
+                // Set up HTTP headers with API key
+                HttpHeaders headers = new HttpHeaders();
+                if (apiKey != null && !apiKey.isEmpty()) {
+                    headers.set("Authorization", "Bearer " + apiKey);
                 }
-            }
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            // Role field might not be accessible directly, try rawAttributes or SAML attribute
-            logger.debug("Could not access profile.role.slug directly: {}", e.getMessage());
-        } catch (Exception e) {
-            logger.debug("Unexpected error accessing profile.role.slug: {}", e.getMessage());
-        }
-        
-        // If role not found via reflection, check rawAttributes for role
-        if (role == null && profile.rawAttributes != null) {
-            Object roleObj = profile.rawAttributes.get("role");
-            if (roleObj != null) {
-                // Role might be a nested object, try to extract slug
-                if (roleObj instanceof java.util.Map) {
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> roleMap = (java.util.Map<String, Object>) roleObj;
-                    Object slugObj = roleMap.get("slug");
-                    if (slugObj != null) {
-                        role = slugObj.toString();
-                        roleSource = "WorkOS profile rawAttributes role.slug";
-                        logger.info("✅ Using role from WorkOS rawAttributes: {} (source: {})", role, roleSource);
+                headers.set("Content-Type", "application/json");
+                HttpEntity<String> entity = new HttpEntity<>(headers);
+                
+                // Make REST API call to your system
+                ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.GET, entity, String.class);
+                
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    // Parse JSON response
+                    // TODO: Update response structure to match your actual API response format
+                    JsonNode jsonNode = objectMapper.readTree(response.getBody());
+                    
+                    // Try different possible response structures
+                    JsonNode roleNode = jsonNode.get("role");
+                    if (roleNode == null) {
+                        roleNode = jsonNode.get("userRole");
+                    }
+                    if (roleNode == null) {
+                        roleNode = jsonNode.get("data");
+                        if (roleNode != null && roleNode.isObject()) {
+                            roleNode = roleNode.get("role");
+                        }
+                    }
+                    
+                    if (roleNode != null) {
+                        role = roleNode.asText();
+                        roleSource = "System API role";
+                        logger.info("✅ Using role from system API: {} (source: {})", role, roleSource);
+                    } else {
+                        logger.warn("Role not found in API response for user: {} in org: {}", 
+                                   profile.email, profile.organizationId);
                     }
                 } else {
-                    role = roleObj.toString();
-                    roleSource = "WorkOS profile rawAttributes role";
-                    logger.info("✅ Using role from WorkOS rawAttributes: {} (source: {})", role, roleSource);
+                    logger.warn("System API returned non-success status: {}", response.getStatusCode());
                 }
+            } catch (Exception e) {
+                logger.warn("Error fetching role from system API: {}", e.getMessage());
+                logger.debug("Error details: ", e);
             }
         }
         
-        // Fallback: Extract from customer_role SAML attribute
+        // SECOND: Fallback to hardcoded test values for POC
+        if (role == null || role.isEmpty()) {
+            // TODO: Remove hardcoded values once API is integrated
+            logger.info("Using hardcoded test role for POC");
+            // Hardcode based on email for testing
+            if (profile.email != null && profile.email.contains("rleon")) {
+                role = "org_super"; // Your test user
+                roleSource = "Hardcoded test value (POC)";
+                logger.info("✅ Using hardcoded role: {} (source: {})", role, roleSource);
+            } else {
+                role = "org_user"; // Default
+                roleSource = "Hardcoded default (POC)";
+                logger.info("Using hardcoded default role: {} (source: {})", role, roleSource);
+            }
+        }
+        
+        // THIRD: Fallback to SAML attribute customer_role
         if (role == null || role.isEmpty()) {
             role = extractCustomAttribute(profile, "customer_role", null);
             if (role != null && !role.isEmpty()) {
@@ -369,9 +500,9 @@ public class WorkOSCallbackController {
             }
         }
         
-        // If no role found, use default
+        // FOURTH: If no role found, use default
         if (role == null || role.isEmpty()) {
-            logger.warn("No role found in WorkOS profile or SAML attributes, using default: org_user");
+            logger.warn("No role found, using default: org_user");
             return "org_user";
         }
         

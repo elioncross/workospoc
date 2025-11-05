@@ -3,20 +3,23 @@ package com.example.workospoc.config;
 import com.workos.WorkOS;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.Environment;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.Base64;
+import javax.annotation.PostConstruct;
+import java.util.HashMap;
+import java.util.Map;
 
 @Configuration
 public class WorkOSConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(WorkOSConfig.class);
     
-    // Constants for logging
-    private static final String AUTH_URL_LOG_MESSAGE = "Authorization URL: {}";
-    private static final String STAGING_API_KEY_PREFIX = "sk_test_";
+    // Constants
     private static final String REDIRECT_URI = "http://localhost:8081/auth/workos/callback";
 
     @Value("${workos.environment:staging}")
@@ -28,8 +31,106 @@ public class WorkOSConfig {
     @Value("${workos.client-id}")
     private String clientId;
 
+    /**
+     * Connection ID - kept for reference/logging only
+     * 
+     * Note: For IdP-initiated flows, this is NOT needed for authorization URLs.
+     * WorkOS automatically determines the connection from the SAML assertion.
+     * The connection ID is provided by WorkOS in the profile object after authentication.
+     */
     @Value("${workos.connection-id:conn_01K841NX4X1AM7TCQ22J7RFDYR}")
     private String connectionId;
+
+    @Autowired
+    private Environment springEnvironment;
+
+    /**
+     * Connection to CorpId Mapping
+     * Maps WorkOS connection IDs to internal corpId (account ID)
+     * Each customer has their own WorkOS connection to their IdP
+     */
+    private Map<String, String> connectionToCorpIdMapping;
+
+    /**
+     * Initialize and load connection mapping from YAML after bean construction
+     */
+    @PostConstruct
+    public void initConnectionMapping() {
+        logger.info("=== Connection Mapping Initialization ===");
+        
+        connectionToCorpIdMapping = new HashMap<>();
+        
+        // Load connection mappings from environment properties
+        // Spring Boot converts YAML map to properties like: workos.connection-mapping.conn_01...=CORP_PROD_001
+        String prefix = "workos.connection-mapping.";
+        
+        // Get all property keys that start with the prefix
+        // We'll check for common connection IDs or iterate through all properties
+        // Since we know the connection IDs, let's try loading them directly
+        
+        // Try to load known connection IDs from configuration
+        String[] knownConnections = {
+            "conn_01K8R9BKTPJWV123532JYJ5T6H",  // Okta
+            "conn_01K953TWV92J9M1F1J0CR85QB6"    // Azure Entra ID
+        };
+        
+        for (String connId : knownConnections) {
+            String propertyKey = prefix + connId;
+            String corpId = springEnvironment.getProperty(propertyKey);
+            if (corpId != null && !corpId.isEmpty()) {
+                connectionToCorpIdMapping.put(connId, corpId);
+                logger.info("  Loaded: {} -> {}", connId, corpId);
+            } else {
+                logger.warn("  Could not load property: {} (value was null or empty)", propertyKey);
+            }
+        }
+        
+        // Also try to discover any other connection mappings dynamically
+        // This is a fallback to catch any we might have missed
+        try {
+            // Get all property keys and filter for our prefix
+            // Note: This approach works but may not catch all nested properties
+            // A more robust approach would use @ConfigurationProperties, but this should work for POC
+            if (springEnvironment instanceof ConfigurableEnvironment) {
+                ConfigurableEnvironment configurableEnv = (ConfigurableEnvironment) springEnvironment;
+                for (org.springframework.core.env.PropertySource<?> ps : configurableEnv.getPropertySources()) {
+                    if (ps.getSource() instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> sourceMap = (Map<String, Object>) ps.getSource();
+                        for (String key : sourceMap.keySet()) {
+                            if (key.startsWith(prefix)) {
+                                String connId = key.substring(prefix.length());
+                                String corpId = springEnvironment.getProperty(key);
+                                if (corpId != null && !corpId.isEmpty() && !connectionToCorpIdMapping.containsKey(connId)) {
+                                    connectionToCorpIdMapping.put(connId, corpId);
+                                    logger.info("  Discovered: {} -> {}", connId, corpId);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Could not discover additional connection mappings dynamically: {}", e.getMessage());
+        }
+        
+        if (!connectionToCorpIdMapping.isEmpty()) {
+            logger.info("✅ Connection mapping loaded successfully!");
+            logger.info("Map size: {}", connectionToCorpIdMapping.size());
+            logger.info("Map contents:");
+            connectionToCorpIdMapping.forEach((key, value) -> 
+                logger.info("  {} -> {}", key, value));
+        } else {
+            logger.error("❌ Connection mapping is EMPTY!");
+            logger.error("   Could not load any connection mappings from application.yml");
+            logger.error("   Check that workos.connection-mapping section exists in application.yml");
+            logger.error("   Expected format:");
+            logger.error("   workos:");
+            logger.error("     connection-mapping:");
+            logger.error("       conn_01K8R9BKTPJWV123532JYJ5T6H: CORP_PROD_001");
+        }
+        logger.info("========================================");
+    }
 
     // API endpoints
     @Value("${workos.api.staging-base-url:https://api.workos.dev}")
@@ -81,6 +182,13 @@ public class WorkOSConfig {
     @Value("${workos.production.require-real-profiles:true}")
     private boolean productionRequireRealProfiles;
 
+    // Corp Mapping API Configuration
+    @Value("${corp.mapping.api.base-url:http://localhost:8082}")
+    private String corpMappingApiBaseUrl;
+
+    @Value("${corp.mapping.api.key:}")
+    private String corpMappingApiKey;
+
     @Bean
     public WorkOS workOS() {
         logger.info("=== WorkOS Configuration Debug ===");
@@ -109,74 +217,6 @@ public class WorkOSConfig {
         
         return workOS;
     }
-    
-    private void validateConfiguration() {
-        logger.info("Validating WorkOS configuration...");
-        
-        if (isStagingEnvironment()) {
-            validateStagingConfiguration();
-        } else if (isProductionEnvironment() && productionValidateApiKey) {
-            validateProductionConfiguration();
-        }
-    }
-
-    private void validateStagingConfiguration() {
-        logger.info("Validating staging configuration:");
-        
-        if (!apiKey.startsWith(STAGING_API_KEY_PREFIX)) {
-            logger.warn("⚠️  WARNING: Non-staging API key in staging environment!");
-            logger.warn("   Expected: {}* (staging key)", STAGING_API_KEY_PREFIX);
-            logger.warn("   Actual: {}", apiKey.length() > 10 ? apiKey.substring(0, 10) + "..." : apiKey);
-        } else {
-            logger.info("✅ API key format validation passed: staging key in staging environment");
-        }
-        
-        logger.info("✅ Configuration validation passed");
-        logger.info("   Environment: staging");
-        logger.info("   API Key: {} format ✓", apiKey.startsWith(STAGING_API_KEY_PREFIX) ? STAGING_API_KEY_PREFIX + "*" : "non-staging");
-        logger.info("   Frontend: {} ✓", frontendBaseUrl);
-        logger.info("   Dashboard URL: {} ✓", getFrontendDashboardUrl());
-        logger.info("   Login URL: {} ✓", getFrontendLoginUrl());
-        
-        logger.info("Staging fallback configuration:");
-        logger.info("   Email: {}", stagingFallbackEmail);
-        logger.info("   Name: {} {}", stagingFallbackFirstName, stagingFallbackLastName);
-        logger.info("   Organization: {}", stagingFallbackOrgName);
-        logger.info("   Role: {}", stagingFallbackRole);
-    }
-
-    private void validateProductionConfiguration() {
-        if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("Production environment requires a valid API key");
-        }
-
-        // Check if it's a base64-encoded placeholder (staging key in production)
-        if (isBase64EncodedPlaceholder(apiKey)) {
-            throw new IllegalStateException(
-                "Production environment detected with staging/placeholder API key. " +
-                "Please provide a real WorkOS API key for production use."
-            );
-        }
-
-        logger.info("Production API key validation passed");
-    }
-
-    private boolean isBase64EncodedPlaceholder(String key) {
-        if (key == null || !key.startsWith(STAGING_API_KEY_PREFIX)) {
-            return false;
-        }
-
-        try {
-            String keyPart = key.substring(STAGING_API_KEY_PREFIX.length()); // Remove staging prefix
-            byte[] decoded = Base64.getDecoder().decode(keyPart);
-            String decodedStr = new String(decoded);
-            
-            // Check for placeholder patterns
-            return decodedStr.contains("key_") && decodedStr.contains(",");
-        } catch (Exception e) {
-            return false; // Not base64, likely a real key
-        }
-    }
 
     // Environment detection methods
     public boolean isStagingEnvironment() {
@@ -194,12 +234,48 @@ public class WorkOSConfig {
         return environment;
     }
 
+    public String getApiKey() {
+        return apiKey;
+    }
+
     public String getClientId() {
         return clientId;
     }
 
+    /**
+     * Get connection ID (for reference/logging only)
+     * 
+     * Note: This is not used for IdP-initiated flows. WorkOS provides
+     * the connection ID in the profile object after authentication.
+     */
     public String getConnectionId() {
         return connectionId;
+    }
+
+    /**
+     * Get corpId by WorkOS connection ID
+     * 
+     * @param connectionId WorkOS connection ID from profile
+     * @return corpId if mapping exists, null otherwise
+     */
+    public String getCorpIdByConnectionId(String connectionId) {
+        if (connectionId == null || connectionId.isEmpty()) {
+            logger.debug("ConnectionId is null or empty, cannot lookup corpId");
+            return null;
+        }
+        
+        String corpId = connectionToCorpIdMapping != null ? 
+            connectionToCorpIdMapping.get(connectionId) : null;
+        
+        if (corpId != null && !corpId.isEmpty()) {
+            logger.debug("✅ Found corpId mapping: {} -> {}", connectionId, corpId);
+            return corpId;
+        }
+        
+        logger.warn("⚠️ No corpId mapping found for connectionId: {}", connectionId);
+        logger.warn("   Available connection mappings: {}", 
+                   connectionToCorpIdMapping != null ? connectionToCorpIdMapping.keySet() : "none");
+        return null;
     }
 
     public String getRedirectUri() {
@@ -268,65 +344,31 @@ public class WorkOSConfig {
         return productionRequireRealProfiles;
     }
 
+    // Corp Mapping API getters
+    public String getCorpMappingApiBaseUrl() {
+        return corpMappingApiBaseUrl;
+    }
+
+    public String getCorpMappingApiKey() {
+        return corpMappingApiKey;
+    }
+
     /**
-     * Generate the authorization URL - Complete manual approach
-     * This completely bypasses the WorkOS SDK to ensure we use the correct staging URL
+     * Generate the authorization URL - DEPRECATED
+     * 
+     * This method is no longer used since SP-initiated SSO flow has been removed.
+     * This application only supports IdP-initiated flows where:
+     * - Users initiate SSO from their IdP dashboard (Okta, Azure AD, etc.)
+     * - WorkOS automatically determines the connection from the SAML assertion
+     * - The app receives the authorization code via callback without needing connection ID
+     * 
+     * @deprecated SP-initiated flow is not supported. Only IdP-initiated flows are enabled.
      */
+    @Deprecated
     public String getAuthorizationUrl() {
-        logger.info("=== Generating WorkOS Authorization URL ===");
-        
-        // Force staging base URL regardless of environment detection
-        String baseUrl = "https://api.workos.dev";
-        // Use connection ID for direct SAML SSO (bypasses AuthKit)
-        String connectionIdValue = this.connectionId; // Use connection ID from config
-        
-        // Use 'connection' parameter for direct SAML SSO (bypasses AuthKit)
-        String authUrl = String.format(
-            "%s/sso/authorize?response_type=code&client_id=%s&redirect_uri=%s&connection=%s",
-            baseUrl, clientId, REDIRECT_URI, connectionIdValue
-        );
-        
-        logger.info("✅ Generated Authorization URL with connection parameter (direct SAML): {}", authUrl);
-        logger.info("   Base URL: {}", baseUrl);
-        logger.info("   Connection ID: {}", connectionIdValue);
-        logger.info("   Client ID: {}", clientId);
-        logger.info("   Redirect URI: {}", REDIRECT_URI);
-        
-        return authUrl;
-    }
-
-    /**
-     * Fallback manual URL building (previous approach)
-     */
-    private String getFallbackAuthorizationUrl() {
-        String baseUrl = getCurrentBaseUrl();
-        
-        if (isStagingEnvironment()) {
-            String authUrl = String.format(
-                "%s/sso/authorize?response_type=code&client_id=%s&redirect_uri=%s&organization=%s",
-                baseUrl, clientId, REDIRECT_URI, "org_test_idp"
-            );
-            
-            logger.info("⚠️  Using fallback manual URL building for staging");
-            logger.info(AUTH_URL_LOG_MESSAGE, authUrl);
-            return authUrl;
-        } else {
-            String authUrl = String.format(
-                "%s/sso/authorize?response_type=code&client_id=%s&redirect_uri=%s&organization=%s",
-                baseUrl, clientId, REDIRECT_URI, getOrganizationIdForProduction()
-            );
-            
-            logger.info(AUTH_URL_LOG_MESSAGE, authUrl);
-            return authUrl;
-        }
-    }
-
-    /**
-     * Get organization ID for production environment
-     */
-    private String getOrganizationIdForProduction() {
-        // This will be set when you have production account
-        String orgId = System.getenv("WORKOS_ORGANIZATION_ID");
-        return orgId != null ? orgId : connectionId; // Fallback to connection ID
+        logger.warn("getAuthorizationUrl() called - SP-initiated flow is not supported");
+        logger.warn("This application only supports IdP-initiated SSO flows.");
+        throw new UnsupportedOperationException(
+            "SP-initiated SSO is not supported. Please use IdP-initiated flow by starting SSO from your IdP dashboard.");
     }
 }

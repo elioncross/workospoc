@@ -5,39 +5,39 @@ spring:
   application:
     name: workos-poc
 
-# WorkOS AuthKit Configuration
+# WorkOS SSO Configuration (IdP-initiated flow only)
+# 
+# This application only supports IdP-initiated SSO flows.
+# Users initiate SSO from their IdP dashboard (Okta, Azure AD, etc.).
+# WorkOS automatically determines the connection from the SAML assertion.
+# No connection ID is needed in authorization URLs - it's provided by WorkOS in the profile.
+#
 workos:
   environment: staging  # Options: staging, production
   # Use environment variables for sensitive values
   # Set these in your environment or .env file:
   # export WORKOS_API_KEY="sk_test_..."
   # export WORKOS_CLIENT_ID="client_..."
-  # export WORKOS_CONNECTION_ID="conn_..."
-  # export WORKOS_ORGANIZATION_ID="org_..."
   # export WORKOS_SESSION_PASSWORD="..."
+  # 
+  # Note: WORKOS_CONNECTION_ID and WORKOS_ORGANIZATION_ID are no longer needed:
+  # - Connection IDs are mapped in connection-mapping section below
+  # - Organization ID is provided by WorkOS in the profile during IdP-initiated flow
   api-key: ${WORKOS_API_KEY:your-api-key-here}
   client-id: ${WORKOS_CLIENT_ID:your-client-id-here}
-  connection-id: ${WORKOS_CONNECTION_ID:your-connection-id-here}
-  organization-id: ${WORKOS_ORGANIZATION_ID:your-organization-id-here}
+  # connection-id and organization-id removed - not needed for IdP-initiated flows
+  # Connection mapping is configured in connection-mapping section below
   redirect-uri: http://localhost:8081/auth/workos/callback
   
   # Cookie encryption password for WorkOS AuthKit
   session-password: ${WORKOS_SESSION_PASSWORD:your-session-password-here}
   
-  # PRODUCTION ORGANIZATION ID (Environment Variable)
-  # When ready for production, set the environment variable:
-  # export WORKOS_ORGANIZATION_ID="org_01..."
-  # 
-  # This enables seamless transition from Test Identity Provider to real organization:
-  # - If WORKOS_ORGANIZATION_ID is set: Uses real organization (production pattern)
-  # - If not set in staging: Falls back to Test Identity Provider (org_test_idp)
-  # - If not set in production: Throws error (prevents misconfiguration)
-  #
-  # To get organization ID:
-  # 1. Log into WorkOS Dashboard
-  # 2. Go to Organizations tab
-  # 3. Create or select organization
-  # 4. Copy the Organization ID (starts with "org_")
+  # Connection to CorpId Mapping
+  # Each customer has their own WorkOS connection to their IdP
+  # Map WorkOS connection ID to your internal corpId (account ID)
+  connection-mapping:
+    conn_01K8R9BKTPJWV123532JYJ5T6H: CORP_PROD_001  # Okta connection
+    conn_01K953TWV92J9M1F1J0CR85QB6: CORP_PROD_002  # Azure Entra ID connection
   
   # Environment-specific API endpoints
   api:
@@ -74,3 +74,14 @@ logging:
   level:
     org.springframework.security: DEBUG
     com.example.workospoc: DEBUG
+
+# Corp Mapping Service Configuration (for future implementation)
+corp:
+  mapping:
+    api:
+      # TODO: Set when corp mapping API is available
+      base-url: ${CORP_MAPPING_API_URL:http://localhost:8082}
+      key: ${CORP_MAPPING_API_KEY:}
+      timeout:
+        connect: 5000  # milliseconds
+        read: 10000    # milliseconds

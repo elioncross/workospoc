@@ -40,18 +40,8 @@
     </button>
   </form>
 
-  <div class="text-center">
-    <p class="mb-3">Or</p>
-    <button
-      type="button"
-      class="btn btn-secondary"
-      (click)="loginWithSSO()"
-      [disabled]="isLoading"
-      style="width: 100%;"
-    >
-      Login with SSO
-    </button>
-  </div>
+  <!-- SP-initiated SSO flow removed - only IdP-initiated flow is supported -->
+  <!-- Users should initiate SSO from their IdP dashboard (Okta, Azure AD, etc.) -->
 
   <div class="mt-3">
     <h4>Demo Users:</h4>

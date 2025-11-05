@@ -56,6 +56,7 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                     String lastName = jwtUtil.getClaimFromToken(jwtToken, "lastName");
                     String organizationId = jwtUtil.getClaimFromToken(jwtToken, "organizationId");
                     String connectionId = jwtUtil.getClaimFromToken(jwtToken, "connectionId");
+                    String corpId = jwtUtil.getClaimFromToken(jwtToken, "corpId");  // Read corpId from JWT
                     
                     // Create display name from available attributes
                     String displayName = username; // fallback to email
@@ -65,7 +66,10 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                         displayName = firstName;
                     }
                     
-                    String corpId = organizationId != null ? organizationId : "workos-external";
+                    // Use corpId from JWT, fallback to organizationId if not present
+                    if (corpId == null || corpId.isEmpty()) {
+                        corpId = organizationId != null ? organizationId : "workos-external";
+                    }
                     
                     logger.info("Creating WorkOS user session for: " + displayName + " (" + username + 
                         "), Organization: " + corpId + ", Connection: " + connectionId);

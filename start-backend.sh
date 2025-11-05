@@ -15,9 +15,11 @@ fi
 # Defaults are placeholders - you must provide actual values
 export WORKOS_API_KEY="${WORKOS_API_KEY:-your-workos-api-key-here}"
 export WORKOS_CLIENT_ID="${WORKOS_CLIENT_ID:-your-workos-client-id-here}"
-export WORKOS_CONNECTION_ID="${WORKOS_CONNECTION_ID:-your-workos-connection-id-here}"
-export WORKOS_ORGANIZATION_ID="${WORKOS_ORGANIZATION_ID:-your-workos-organization-id-here}"
 export WORKOS_SESSION_PASSWORD="${WORKOS_SESSION_PASSWORD:-your-workos-session-password-here}"
+
+# Note: WORKOS_CONNECTION_ID and WORKOS_ORGANIZATION_ID are no longer needed
+# - Connection IDs are mapped in application.yml (workos.connection-mapping)
+# - Organization ID is provided by WorkOS in the profile during IdP-initiated flow
 
 # Validate that required environment variables are set
 if [ "$WORKOS_API_KEY" = "your-workos-api-key-here" ] || [ -z "$WORKOS_API_KEY" ]; then
@@ -37,7 +39,7 @@ if [ $? -eq 0 ]; then
     echo "  Environment: staging"
     echo "  API Key: ${WORKOS_API_KEY:0:15}..."
     echo "  Client ID: ${WORKOS_CLIENT_ID}"
-    echo "  Organization ID: ${WORKOS_ORGANIZATION_ID}"
+    echo "  Connection mappings: configured in application.yml"
     echo ""
     mvn spring-boot:run -Dspring-boot.run.arguments="--server.port=8081"
 else
