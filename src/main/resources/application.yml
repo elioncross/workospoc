@@ -39,6 +39,18 @@ workos:
     conn_01K8R9BKTPJWV123532JYJ5T6H: CORP_PROD_001  # Okta connection
     conn_01K953TWV92J9M1F1J0CR85QB6: CORP_PROD_002  # Azure Entra ID connection
   
+  # Connection to Logo Mapping
+  # Maps WorkOS connection IDs to IdP logo filenames
+  connection-logos:
+    conn_01K8R9BKTPJWV123532JYJ5T6H: okta_logo.png
+    conn_01K953TWV92J9M1F1J0CR85QB6: azure_entra_id_logo.jpeg
+  
+  # Connection to IdP Name Mapping
+  # Maps WorkOS connection IDs to IdP display names
+  connection-names:
+    conn_01K8R9BKTPJWV123532JYJ5T6H: Okta
+    conn_01K953TWV92J9M1F1J0CR85QB6: Azure Entra ID
+  
   # Environment-specific API endpoints
   api:
     staging-base-url: "https://api.workos.dev"

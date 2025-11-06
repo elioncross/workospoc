@@ -52,6 +52,18 @@ public class WorkOSConfig {
     private Map<String, String> connectionToCorpIdMapping;
 
     /**
+     * Connection to Logo Mapping
+     * Maps WorkOS connection IDs to IdP logo filenames
+     */
+    private Map<String, String> connectionToLogoMapping;
+
+    /**
+     * Connection to IdP Name Mapping
+     * Maps WorkOS connection IDs to IdP display names
+     */
+    private Map<String, String> connectionToNameMapping;
+
+    /**
      * Initialize and load connection mapping from YAML after bean construction
      */
     @PostConstruct
@@ -128,6 +140,140 @@ public class WorkOSConfig {
             logger.error("   workos:");
             logger.error("     connection-mapping:");
             logger.error("       conn_01K8R9BKTPJWV123532JYJ5T6H: CORP_PROD_001");
+        }
+        logger.info("========================================");
+    }
+
+    /**
+     * Initialize and load connection logo mapping from YAML after bean construction
+     */
+    @PostConstruct
+    public void initLogoMapping() {
+        logger.info("=== Connection Logo Mapping Initialization ===");
+        
+        connectionToLogoMapping = new HashMap<>();
+        
+        // Load connection logo mappings from environment properties
+        String prefix = "workos.connection-logos.";
+        
+        // Known connection IDs
+        String[] knownConnections = {
+            "conn_01K8R9BKTPJWV123532JYJ5T6H",  // Okta
+            "conn_01K953TWV92J9M1F1J0CR85QB6"    // Azure Entra ID
+        };
+        
+        for (String connId : knownConnections) {
+            String propertyKey = prefix + connId;
+            String logo = springEnvironment.getProperty(propertyKey);
+            if (logo != null && !logo.isEmpty()) {
+                connectionToLogoMapping.put(connId, logo);
+                logger.info("  Loaded logo: {} -> {}", connId, logo);
+            } else {
+                logger.warn("  Could not load logo property: {} (value was null or empty)", propertyKey);
+            }
+        }
+        
+        // Also try to discover any other logo mappings dynamically
+        try {
+            if (springEnvironment instanceof ConfigurableEnvironment) {
+                ConfigurableEnvironment configurableEnv = (ConfigurableEnvironment) springEnvironment;
+                for (org.springframework.core.env.PropertySource<?> ps : configurableEnv.getPropertySources()) {
+                    if (ps.getSource() instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> sourceMap = (Map<String, Object>) ps.getSource();
+                        for (String key : sourceMap.keySet()) {
+                            if (key.startsWith(prefix)) {
+                                String connId = key.substring(prefix.length());
+                                String logo = springEnvironment.getProperty(key);
+                                if (logo != null && !logo.isEmpty() && !connectionToLogoMapping.containsKey(connId)) {
+                                    connectionToLogoMapping.put(connId, logo);
+                                    logger.info("  Discovered logo: {} -> {}", connId, logo);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Could not discover additional logo mappings dynamically: {}", e.getMessage());
+        }
+        
+        if (!connectionToLogoMapping.isEmpty()) {
+            logger.info("✅ Connection logo mapping loaded successfully!");
+            logger.info("Logo map size: {}", connectionToLogoMapping.size());
+            logger.info("Logo map contents:");
+            connectionToLogoMapping.forEach((key, value) -> 
+                logger.info("  {} -> {}", key, value));
+        } else {
+            logger.warn("⚠️ Connection logo mapping is EMPTY!");
+            logger.warn("   No logo mappings found in application.yml");
+        }
+        logger.info("========================================");
+    }
+
+    /**
+     * Initialize and load connection name mapping from YAML after bean construction
+     */
+    @PostConstruct
+    public void initNameMapping() {
+        logger.info("=== Connection Name Mapping Initialization ===");
+        
+        connectionToNameMapping = new HashMap<>();
+        
+        // Load connection name mappings from environment properties
+        String prefix = "workos.connection-names.";
+        
+        // Known connection IDs
+        String[] knownConnections = {
+            "conn_01K8R9BKTPJWV123532JYJ5T6H",  // Okta
+            "conn_01K953TWV92J9M1F1J0CR85QB6"    // Azure Entra ID
+        };
+        
+        for (String connId : knownConnections) {
+            String propertyKey = prefix + connId;
+            String name = springEnvironment.getProperty(propertyKey);
+            if (name != null && !name.isEmpty()) {
+                connectionToNameMapping.put(connId, name);
+                logger.info("  Loaded name: {} -> {}", connId, name);
+            } else {
+                logger.warn("  Could not load name property: {} (value was null or empty)", propertyKey);
+            }
+        }
+        
+        // Also try to discover any other name mappings dynamically
+        try {
+            if (springEnvironment instanceof ConfigurableEnvironment) {
+                ConfigurableEnvironment configurableEnv = (ConfigurableEnvironment) springEnvironment;
+                for (org.springframework.core.env.PropertySource<?> ps : configurableEnv.getPropertySources()) {
+                    if (ps.getSource() instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> sourceMap = (Map<String, Object>) ps.getSource();
+                        for (String key : sourceMap.keySet()) {
+                            if (key.startsWith(prefix)) {
+                                String connId = key.substring(prefix.length());
+                                String name = springEnvironment.getProperty(key);
+                                if (name != null && !name.isEmpty() && !connectionToNameMapping.containsKey(connId)) {
+                                    connectionToNameMapping.put(connId, name);
+                                    logger.info("  Discovered name: {} -> {}", connId, name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Could not discover additional name mappings dynamically: {}", e.getMessage());
+        }
+        
+        if (!connectionToNameMapping.isEmpty()) {
+            logger.info("✅ Connection name mapping loaded successfully!");
+            logger.info("Name map size: {}", connectionToNameMapping.size());
+            logger.info("Name map contents:");
+            connectionToNameMapping.forEach((key, value) -> 
+                logger.info("  {} -> {}", key, value));
+        } else {
+            logger.warn("⚠️ Connection name mapping is EMPTY!");
+            logger.warn("   No name mappings found in application.yml");
         }
         logger.info("========================================");
     }
@@ -275,6 +421,54 @@ public class WorkOSConfig {
         logger.warn("⚠️ No corpId mapping found for connectionId: {}", connectionId);
         logger.warn("   Available connection mappings: {}", 
                    connectionToCorpIdMapping != null ? connectionToCorpIdMapping.keySet() : "none");
+        return null;
+    }
+
+    /**
+     * Get logo filename by WorkOS connection ID
+     * 
+     * @param connectionId WorkOS connection ID from profile
+     * @return logo filename if mapping exists, null otherwise
+     */
+    public String getLogoByConnectionId(String connectionId) {
+        if (connectionId == null || connectionId.isEmpty()) {
+            logger.debug("ConnectionId is null or empty, cannot lookup logo");
+            return null;
+        }
+        
+        String logo = connectionToLogoMapping != null ? 
+            connectionToLogoMapping.get(connectionId) : null;
+        
+        if (logo != null && !logo.isEmpty()) {
+            logger.debug("✅ Found logo mapping: {} -> {}", connectionId, logo);
+            return logo;
+        }
+        
+        logger.debug("⚠️ No logo mapping found for connectionId: {}", connectionId);
+        return null;
+    }
+
+    /**
+     * Get IdP display name by WorkOS connection ID
+     * 
+     * @param connectionId WorkOS connection ID from profile
+     * @return IdP display name if mapping exists, null otherwise
+     */
+    public String getIdpNameByConnectionId(String connectionId) {
+        if (connectionId == null || connectionId.isEmpty()) {
+            logger.debug("ConnectionId is null or empty, cannot lookup IdP name");
+            return null;
+        }
+        
+        String name = connectionToNameMapping != null ? 
+            connectionToNameMapping.get(connectionId) : null;
+        
+        if (name != null && !name.isEmpty()) {
+            logger.debug("✅ Found IdP name mapping: {} -> {}", connectionId, name);
+            return name;
+        }
+        
+        logger.debug("⚠️ No IdP name mapping found for connectionId: {}", connectionId);
         return null;
     }
 

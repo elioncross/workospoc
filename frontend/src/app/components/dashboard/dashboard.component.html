@@ -4,13 +4,37 @@
   
   <div *ngIf="currentUser" class="alert alert-info">
     <h4>Current User Information:</h4>
+    
+    <!-- IdP Logo and Name Display -->
+    <div *ngIf="currentUser.idpLogo || currentUser.idpName" class="idp-info mb-3 p-2" style="background-color: #f8f9fa; border-radius: 4px;">
+      <div class="d-flex align-items-center">
+        <img *ngIf="currentUser.idpLogo" 
+             [src]="'assets/' + currentUser.idpLogo" 
+             [alt]="'Identity Provider Logo'"
+             class="idp-logo"
+             style="max-height: 40px; max-width: 150px; margin-right: 15px;">
+        <div>
+          <div *ngIf="currentUser.idpName" class="fw-bold">{{ currentUser.idpName }}</div>
+          <div *ngIf="currentUser.connectionType" class="text-muted small">
+            Authentication Method: {{ currentUser.connectionType }}
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <ul>
+      <li *ngIf="currentUser.fullName">
+        <strong>Name:</strong> {{ currentUser.fullName }}
+      </li>
       <li><strong>Username:</strong> {{ currentUser.username }}</li>
       <li><strong>Corp ID:</strong> {{ currentUser.corpId }}</li>
       <li><strong>Role:</strong> 
         <span class="role-badge" [ngClass]="'role-' + currentUser.role.toLowerCase()">
           {{ currentUser.role }}
         </span>
+      </li>
+      <li *ngIf="currentUser.organizationId">
+        <strong>Organization ID:</strong> {{ currentUser.organizationId }}
       </li>
     </ul>
   </div>
