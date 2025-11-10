@@ -159,9 +159,9 @@ public class WorkOSCallbackController {
                 
                 if (workOSConfig.isStagingEnvironment()) {
                     // STAGING FALLBACK: Use clear static fallback user
-                    logger.warn("=".repeat(60));
+                    logger.warn("============================================================");
                     logger.warn("STAGING FALLBACK USER - NOT REAL DATA FROM WORKOS");
-                    logger.warn("=".repeat(60));
+                    logger.warn("============================================================");
                     
                     userEmail = workOSConfig.getStagingFallbackEmail();
                     userRole = workOSConfig.getStagingFallbackRole();
@@ -184,7 +184,7 @@ public class WorkOSCallbackController {
                     logger.info("  Organization: {} ({})", workOSConfig.getStagingFallbackOrgName(), workOSConfig.getStagingFallbackOrgId());
                     logger.info("  Connection ID: {}", workOSConfig.getStagingFallbackConnectionId());
                     logger.warn("THIS IS STAGING FALLBACK DATA - NOT FROM WORKOS API");
-                    logger.warn("=".repeat(60));
+                    logger.warn("============================================================");
                     
                 } else {
                     // PRODUCTION ERROR: Show proper error page
